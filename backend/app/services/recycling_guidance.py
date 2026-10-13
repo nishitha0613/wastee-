@@ -3,23 +3,25 @@
 Provides structured, category-specific recycling methods, action steps, precautions,
 and environmental impact assessments.
 
-Adheres strictly to waste material streams:
-- Organic (composting, wet waste collection, do NOT mix plastic/metal/glass)
-- Plastic (identification of resin codes, rinsing, certified recycling points, do NOT claim all is recyclable)
-- Paper (clean dry paper/cardboard recycling, contaminants removal, soiled paper caveats)
-- Glass (color sorting, rinsing, dedicated drop-off, safely wrap broken glass)
-- Metal (can/scrap separation, rinsing, scrap metal recovery, safe aerosol handling)
-- E-Waste (authorized WEEE collection, manufacturer take-back, battery separation)
-- Hazardous (licensed toxic management, safe original storage, no household bin disposal)
-- Other / Unknown (unidentified item verification, label checking, administrator collection assistance)
+Adheres strictly to waste material streams and category-to-bin mappings:
+- Plastic -> Dry Waste / Plastic Recycling (Category: Recyclable Waste)
+- Paper & Cardboard -> Paper Recycling (Category: Recyclable Waste)
+- Glass -> Glass Recycling (Category: Recyclable Waste)
+- Metal -> Metal Recycling (Category: Recyclable Waste)
+- Organic food scraps -> Wet Waste / Composting (Category: Organic / Compostable Waste)
+- E-Waste -> Authorized E-waste Collection (Category: Electronic Waste)
+- Hazardous -> Appropriate Authorized Special Collection (Category: Hazardous Waste)
+- Other / Unidentified -> Verification Required (Category: Unidentified / Other)
 """
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from app.models.waste_report import WasteType
 
 
 RECYCLING_GUIDANCE_CATALOG: Dict[str, Dict[str, Any]] = {
     WasteType.ORGANIC.value: {
-        "category": WasteType.ORGANIC.value,
+        "category": "Organic / Compostable Waste",
+        "recommended_bin": "Wet Waste / Composting",
+        "bin": "Wet Waste / Composting",
         "primary_method": "Home composting and municipal wet-waste collection",
         "recycling_methods": [
             "Home composting: Set up an aerated compost bin or heap for raw kitchen scraps and organic yard trimmings.",
@@ -28,7 +30,7 @@ RECYCLING_GUIDANCE_CATALOG: Dict[str, Dict[str, Any]] = {
         ],
         "action_steps": [
             "Separate food and kitchen waste (vegetable peels, fruit rinds, leftover food, coffee grounds) from dry recyclables.",
-            "Put it into an appropriate composting or wet-waste system.",
+            "Deposit it into an appropriate composting or wet-waste collection stream.",
             "Maintain suitable moisture and aeration to promote active aerobic decomposition."
         ],
         "precautions": [
@@ -41,23 +43,28 @@ RECYCLING_GUIDANCE_CATALOG: Dict[str, Dict[str, Any]] = {
         "collection_recommended": False,
     },
     WasteType.PLASTIC.value: {
-        "category": WasteType.PLASTIC.value,
-        "primary_method": "Plastic segregation and certified mechanical recycling",
+        "category": "Recyclable Waste",
+        "recommended_bin": "Dry Waste / Plastic Recycling",
+        "bin": "Dry Waste / Plastic Recycling",
+        "subtype": "PET Plastic (#1) / Rigid Plastics",
+        "primary_method": "Plastic segregation and certified mechanical recycling according to local municipal rules",
         "recycling_methods": [
-            "Identify the plastic type and recycling symbol (e.g. PET #1, HDPE #2, PP #5) on the bottom or label where possible.",
-            "Empty and rinse recyclable containers thoroughly to remove food grease, sugar, and beverage residues.",
-            "Separate recyclable rigid plastic from contaminated, degraded, or multi-layer metallized wrappers.",
-            "Take suitable clean plastic to a municipal recycling collection point or authorized plastic recycling partner."
+            "Empty the bottle completely.",
+            "Rinse it if needed and allow it to dry.",
+            "Separate the cap and label if required by the local recycling facility.",
+            "Check the resin identification code, if available, to help determine the plastic type.",
+            "Place it in an authorized plastic recycling or dry-waste collection stream.",
+            "If local facilities do not accept it, direct the user to an appropriate municipal collection point."
         ],
         "action_steps": [
             "Empty the bottle or container completely before disposal.",
-            "Rinse it if necessary to prevent souring and pest attraction.",
-            "Keep the bottle separate from wet and organic waste.",
-            "Put it in the appropriate dry/recyclable waste stream or authorized plastic collection point.",
-            "Keep caps and labels handled according to local recycling instructions (e.g., flatten bottle and re-secure cap if accepted locally)."
+            "Rinse it if needed and allow it to dry to prevent odors and contamination.",
+            "Separate the cap and label if required by the local recycling facility.",
+            "Check the resin identification code, if available, to determine the plastic type.",
+            "Place it in an authorized plastic recycling or dry-waste collection stream."
         ],
         "precautions": [
-            "Do not claim or assume every type of plastic is recyclable; check local facility capabilities and resin codes.",
+            "Do not assume every bottle is PET or that every municipality accepts all plastic types; verify local facility rules.",
             "Never burn plastic waste, as it releases toxic dioxins, furans, and hazardous atmospheric pollutants.",
             "Avoid mixing heavily soiled, motor-oil-contaminated, or chemical-coated plastics with clean recyclables."
         ],
@@ -66,7 +73,9 @@ RECYCLING_GUIDANCE_CATALOG: Dict[str, Dict[str, Any]] = {
         "collection_recommended": False,
     },
     WasteType.PAPER.value: {
-        "category": WasteType.PAPER.value,
+        "category": "Recyclable Waste",
+        "recommended_bin": "Paper Recycling",
+        "bin": "Paper Recycling",
         "primary_method": "Clean paper and cardboard repulping and recycling",
         "recycling_methods": [
             "Paper recycling: Bundle dry newspapers, office sheets, notebooks, envelopes, and paper packaging.",
@@ -89,7 +98,9 @@ RECYCLING_GUIDANCE_CATALOG: Dict[str, Dict[str, Any]] = {
         "collection_recommended": False,
     },
     WasteType.GLASS.value: {
-        "category": WasteType.GLASS.value,
+        "category": "Recyclable Waste",
+        "recommended_bin": "Glass Recycling",
+        "bin": "Glass Recycling",
         "primary_method": "Closed-loop circular glass container recycling",
         "recycling_methods": [
             "Separate glass containers (bottles, jars, flacons) from household trash and sort by color (clear, amber, green) where requested.",
@@ -112,7 +123,9 @@ RECYCLING_GUIDANCE_CATALOG: Dict[str, Dict[str, Any]] = {
         "collection_recommended": False,
     },
     WasteType.METAL.value: {
-        "category": WasteType.METAL.value,
+        "category": "Recyclable Waste",
+        "recommended_bin": "Metal Recycling",
+        "bin": "Metal Recycling",
         "primary_method": "Scrap metal recovery and secondary smelting",
         "recycling_methods": [
             "Separate metal containers (aluminum beverage cans, tin-plated food cans) from general refuse.",
@@ -135,7 +148,9 @@ RECYCLING_GUIDANCE_CATALOG: Dict[str, Dict[str, Any]] = {
         "collection_recommended": False,
     },
     WasteType.E_WASTE.value: {
-        "category": WasteType.E_WASTE.value,
+        "category": "Electronic Waste",
+        "recommended_bin": "Authorized E-waste Collection",
+        "bin": "Authorized E-waste Collection",
         "primary_method": "Authorized WEEE facility dismantling and precious metal recovery",
         "recycling_methods": [
             "Deliver electronics to authorized e-waste collection centers or municipal e-waste drop-off drives.",
@@ -158,30 +173,34 @@ RECYCLING_GUIDANCE_CATALOG: Dict[str, Dict[str, Any]] = {
         "collection_recommended": True,
     },
     WasteType.HAZARDOUS.value: {
-        "category": WasteType.HAZARDOUS.value,
+        "category": "Hazardous Waste",
+        "recommended_bin": "Appropriate Authorized Special Collection",
+        "bin": "Appropriate Authorized Special Collection",
         "primary_method": "Authorized hazardous-waste facility containment and neutralization",
         "recycling_methods": [
-            "Transport to authorized hazardous-waste handling facilities or designated municipal toxic drop-off days.",
+            "Transport batteries and hazardous materials to authorized hazardous-waste handling facilities or designated municipal toxic drop-off days.",
             "Practice safe handling by retaining chemicals in original, clearly labeled containers with closed caps.",
             "Maintain separate collection strictly isolated from all regular domestic waste streams.",
             "Rely exclusively on certified chemical neutralization or high-temperature hazardous incineration."
         ],
         "action_steps": [
-            "Keep hazardous substances (paints, automotive fluids, pesticides, batteries, solvents) in their original tightly sealed containers.",
+            "Keep hazardous substances (batteries, paints, automotive fluids, pesticides, solvents) in their original tightly sealed containers.",
             "Store safely in a well-ventilated, secure area away from heat sources, children, and pets until collection.",
             "Deliver directly to a licensed municipal hazardous-waste station or schedule an authorized hazardous pickup."
         ],
         "precautions": [
-            "Do not dispose of hazardous materials in normal household bins, curbside recycling, or street gutters.",
+            "Do not dispose of hazardous materials or batteries in normal household bins, curbside recycling, or street gutters.",
             "Never pour solvents, motor oil, bleach, or paints down sinks, toilets, or outdoor storm drains.",
-            "Avoid direct skin or eye contact and inhalation of vapors; use chemical-resistant gloves when handling."
+            "Avoid direct skin or eye contact and inhalation of vapors; use protective gloves when handling."
         ],
         "environmental_impact": "Professional hazardous waste management prevents lethal biological and chemical contamination of groundwater aquifers, rivers, and community topsoil.",
         "recyclable": False,
         "collection_recommended": True,
     },
     WasteType.OTHER.value: {
-        "category": WasteType.OTHER.value,
+        "category": "Unidentified / Other",
+        "recommended_bin": "Verification Required",
+        "bin": "Verification Required",
         "primary_method": "Unable to confidently identify this item",
         "recycling_methods": [
             "Unable to confidently identify this item: do not assume or invent an unverified recycling method.",
@@ -190,7 +209,7 @@ RECYCLING_GUIDANCE_CATALOG: Dict[str, Dict[str, Any]] = {
             "Offer administrator or municipal collection assistance if the waste type remains uncertain."
         ],
         "action_steps": [
-            "Inspect the item for recycling triangles, material abbreviations (PET, PP, PAP, FE), or disposal labels.",
+            "Inspect the item for recycling triangles, material abbreviations (PET, HDPE, PAP, FE), or disposal labels.",
             "If the item is confirmed to be non-recyclable composite or soiled waste, dispose of it in the residual landfill bin.",
             "Submit a collection request through this system to have an administrator or sanitation specialist inspect the item."
         ],
@@ -201,36 +220,43 @@ RECYCLING_GUIDANCE_CATALOG: Dict[str, Dict[str, Any]] = {
         ],
         "environmental_impact": "Taking time to verify uncertain items prevents cross-contamination of clean recyclable bales and avoids introducing hazardous substances into standard recycling plants.",
         "recyclable": False,
-        "collection_recommended": True,
+        "collection_recommended": False,
     },
 }
 
 
-def get_recycling_guidance(waste_type: str, is_low_confidence: bool = False) -> Dict[str, Any]:
+def get_recycling_guidance(
+    waste_type: str,
+    is_low_confidence: bool = False,
+    subtype: Optional[str] = None,
+) -> Dict[str, Any]:
     """Retrieve structured recycling methods and disposal recommendations.
 
-    Returns:
-    {
-        "category": str,
-        "primary_method": str,
-        "recycling_methods": List[str],
-        "action_steps": List[str],
-        "precautions": List[str],
-        "environmental_impact": str,
-        "recyclable": bool,
-        "collection_recommended": bool,
-    }
+    Returns category, recommended_bin, primary_method, recycling_methods,
+    action_steps, precautions, environmental_impact, recyclability,
+    collection_recommended, and optional subtype.
     """
     if is_low_confidence:
         guidance = RECYCLING_GUIDANCE_CATALOG[WasteType.OTHER.value].copy()
-        guidance["category"] = WasteType.OTHER.value
+        guidance["category"] = "Unidentified / Other"
+        guidance["recommended_bin"] = "Verification Required"
+        guidance["bin"] = "Verification Required"
         return guidance
 
     normalized_type = (waste_type or "").strip()
+    matched_entry = None
     for key, data in RECYCLING_GUIDANCE_CATALOG.items():
         if key.lower() == normalized_type.lower():
-            return data.copy()
+            matched_entry = data.copy()
+            break
 
-    fallback = RECYCLING_GUIDANCE_CATALOG[WasteType.OTHER.value].copy()
-    fallback["category"] = waste_type or WasteType.OTHER.value
-    return fallback
+    if not matched_entry:
+        matched_entry = RECYCLING_GUIDANCE_CATALOG[WasteType.OTHER.value].copy()
+        matched_entry["category"] = "Unidentified / Other"
+        matched_entry["recommended_bin"] = "Verification Required"
+        matched_entry["bin"] = "Verification Required"
+
+    if subtype:
+        matched_entry["subtype"] = subtype
+
+    return matched_entry

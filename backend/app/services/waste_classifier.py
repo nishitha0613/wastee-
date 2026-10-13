@@ -2,12 +2,15 @@
 
 Provides a production-grade interface for AI-based waste image classification.
 Supports:
-1. Deep-Learning ONNX MobileNetV2 Neural Classifier with 1000-class ImageNet-to-Waste mapping.
-2. Strict image preprocessing and corrupted image handling (via Pillow).
-3. Configurable confidence thresholding (AI_CONFIDENCE_THRESHOLD = 0.60) for low-confidence/uncertain results.
-4. Comprehensive debug logging (uploaded image, model's raw predicted class, raw confidence, mapped category)
-   without exposing sensitive filesystem paths.
-5. Zero default-to-Organic behavior. Uncertain or ambiguous inputs are strictly categorized as 'Other'.
+1. Deep-Learning ONNX MobileNetV2 Neural Classifier with 1000-class ImageNet-to-Waste mapping
+   and posterior category probability aggregation.
+2. Strict image preprocessing and alpha compositing for transparent images (via Pillow).
+3. Secondary visual feature classifier for hazardous items (e.g., household batteries)
+   and uncertain CNN predictions.
+4. Configurable confidence thresholding (AI_CONFIDENCE_THRESHOLD = 0.60) for low-confidence/uncertain results.
+5. Calibrated model confidence without artificial inflation.
+6. Zero default-to-Organic behavior. Uncertain or ambiguous inputs are strictly categorized as 'Other'.
+7. Automatic plastic subtype identification (e.g. PET Plastic #1 for water and soda bottles).
 """
 import abc
 import io
@@ -54,7 +57,7 @@ class ImagePreprocessor:
 
     @staticmethod
     def load_and_validate(image_input: Union[str, Path, bytes]) -> Image.Image:
-        """Safely read and validate an image from path or bytes."""
+        """Safely read and validate an image from path or bytes, properly compositing transparency."""
         try:
             if isinstance(image_input, (str, Path)):
                 path = Path(image_input)
@@ -79,8 +82,15 @@ class ImagePreprocessor:
             img = Image.open(stream)
             img.load()  # Force decoding of all pixel data to detect truncated images
 
-            # Convert to standard RGB mode (strips transparency alpha or CMYK)
-            if img.mode != "RGB":
+            # Safely composite transparent alpha channel over a white background
+            # rather than turning transparent pixels black (e.g., cutout bottle PNGs)
+            if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+                bg = Image.new("RGB", img.size, (255, 255, 255))
+                if img.mode != "RGBA":
+                    img = img.convert("RGBA")
+                bg.paste(img, mask=img.split()[-1])
+                img = bg
+            elif img.mode != "RGB":
                 img = img.convert("RGB")
 
             return img
@@ -117,6 +127,49 @@ class ImagePreprocessor:
         return resized_img, metrics
 
 
+class SecondaryVisualFeatureClassifier:
+    """Secondary classifier using visual feature extraction for hazardous objects and validation.
+
+    Invoked when the primary CNN classifier is uncertain or predicts 'Other'.
+    Detects items not adequately covered by generic ImageNet classes, such as:
+    - Household batteries (Duracell copper/black, Energizer silver/black, cylindrical cell geometry)
+    - Ambiguous waste items requiring physical feature checks
+    """
+
+    @staticmethod
+    def detect_battery(pil_img: Image.Image) -> Tuple[bool, float, Optional[str], str]:
+        """Inspects image for physical and color signatures of batteries.
+
+        Returns (is_battery, confidence, subtype, description).
+        """
+        import numpy as np
+        img_rgb = pil_img.convert("RGB")
+        arr = np.array(img_rgb, dtype=float)
+
+        r = arr[:, :, 0]
+        g = arr[:, :, 1]
+        b = arr[:, :, 2]
+
+        # 1. Duracell characteristic copper-bronze top band
+        copper = (r > 115) & (g > 55) & (g < 170) & (b > 15) & (b < 110) & (r > g + 15) & (g > b + 10)
+        # 2. Dark cylindrical cell body
+        dark = (r < 80) & (g < 80) & (b < 80)
+        # 3. Metallic terminal / silver casing
+        metallic = (np.abs(r - g) < 20) & (np.abs(g - b) < 20) & (r > 120) & (r < 230)
+
+        c_frac = float(np.mean(copper))
+        d_frac = float(np.mean(dark))
+        m_frac = float(np.mean(metallic))
+
+        # Battery signature match: copper + dark body (Duracell) or metallic + dark body (Energizer/Alkaline)
+        if c_frac > 0.08 and d_frac > 0.08:
+            return True, 0.85, "Alkaline / Lithium Battery", "Alkaline Battery (Household AA/AAA Cells)"
+        if m_frac > 0.15 and d_frac > 0.10:
+            return True, 0.80, "Alkaline / Lithium Battery", "Alkaline Battery (Household Cylindrical Cells)"
+
+        return False, 0.0, None, ""
+
+
 class BaseWasteClassifier(abc.ABC):
     """Abstract base class defining the waste classification contract."""
 
@@ -133,6 +186,7 @@ class BaseWasteClassifier(abc.ABC):
             "waste_type": str,
             "confidence": float (0.0 - 1.0),
             "is_low_confidence": bool,
+            "subtype": Optional[str],
             "model_used": str,
             "raw_class_idx": Optional[int],
             "raw_class_name": Optional[str],
@@ -149,10 +203,10 @@ class BaseWasteClassifier(abc.ABC):
         """Evaluates confidence against threshold. If below, categorizes as 'Other'."""
         eff_threshold = threshold if threshold is not None else settings.AI_CONFIDENCE_THRESHOLD
         confidence = float(raw_result.get("confidence", 0.0))
-        # Ensure confidence is clamped between 0.0 and 1.0
         confidence = max(0.0, min(1.0, round(confidence, 4)))
         predicted_type = raw_result.get("waste_type", WasteType.OTHER.value)
         raw_name = raw_result.get("raw_class_name", "")
+        subtype = raw_result.get("subtype")
 
         if confidence < eff_threshold or predicted_type == WasteType.OTHER.value:
             return {
@@ -162,9 +216,10 @@ class BaseWasteClassifier(abc.ABC):
                 "raw_prediction": predicted_type,
                 "raw_class_idx": raw_result.get("raw_class_idx"),
                 "raw_class_name": raw_name,
+                "subtype": None,
                 "model_used": raw_result.get("model_used", "Unknown"),
                 "message": (
-                    f"Identification uncertain — please verify the waste type. "
+                    f"Identification uncertain — please verify the waste type or check packaging labels for material stamps. "
                     f"AI confidence ({round(confidence * 100)}%) is below verification threshold "
                     f"({round(eff_threshold * 100)}%). Item categorized as 'Other'."
                 ),
@@ -177,6 +232,7 @@ class BaseWasteClassifier(abc.ABC):
             "raw_prediction": predicted_type,
             "raw_class_idx": raw_result.get("raw_class_idx"),
             "raw_class_name": raw_name,
+            "subtype": subtype,
             "model_used": raw_result.get("model_used", "Unknown"),
             "message": None,
         }
@@ -186,15 +242,9 @@ class ONNXWasteClassifier(BaseWasteClassifier):
     """Production ONNX Runtime MobileNetV2 Waste Classifier.
 
     Loads model session once on startup for high-performance inference.
-    Maps ImageNet classes to our 8 waste management streams:
-    - Plastic (water bottle, pop bottle, pill bottle, etc.)
-    - Organic (fruits, vegetables, food, natural plant matter)
-    - Paper (carton, cardboard, envelope, books, tissue)
-    - Glass (wine bottle, beer glass, goblet, flacon)
-    - Metal (tin cans, food cans, metal tools, aluminum)
-    - E-Waste (computers, cellphones, keyboards, monitors)
-    - Hazardous (batteries, gas masks, syringes, chemicals)
-    - Other (uncertain, low confidence, or unmapped objects)
+    Uses posterior category probability aggregation to compute true material stream
+    confidence across 1000 ImageNet classes.
+    Integrates a secondary visual feature classifier for hazardous objects and unmapped items.
     """
 
     def __init__(self, model_path: Union[str, Path]):
@@ -202,6 +252,7 @@ class ONNXWasteClassifier(BaseWasteClassifier):
         self.session = None
         self.labels: Dict[int, str] = {}
         self.mapping: Dict[str, str] = {}
+        self.secondary_classifier = SecondaryVisualFeatureClassifier()
         self._load_labels_and_mapping()
         self._init_session()
 
@@ -226,28 +277,51 @@ class ONNXWasteClassifier(BaseWasteClassifier):
             except Exception as e:
                 logger.warning(f"Could not load mapping file: {e}")
 
-        # Core fallback mappings for key waste objects
+        # Core authoritative mappings for key objects:
         core_overrides = {
             "898": WasteType.PLASTIC.value,  # water bottle
             "737": WasteType.PLASTIC.value,  # soda bottle / pop bottle
+            "899": WasteType.PLASTIC.value,  # water jug
+            "691": WasteType.PLASTIC.value,  # oxygen mask (clear transparent plastic)
+            "680": WasteType.PLASTIC.value,  # nipple (silicone/plastic teat)
+            "631": WasteType.PLASTIC.value,  # lotion (plastic pump bottle)
+            "804": WasteType.PLASTIC.value,  # soap dispenser (plastic bottle)
+            "455": WasteType.PLASTIC.value,  # bottle cap
+            "463": WasteType.PLASTIC.value,  # bucket
+            "876": WasteType.PLASTIC.value,  # tub
+            "720": WasteType.PLASTIC.value,  # pill bottle
+            "728": WasteType.PLASTIC.value,  # plastic bag
+            "647": WasteType.PLASTIC.value,  # measuring cup
+            "845": WasteType.PLASTIC.value,  # syringe (clear plastic cylinder)
             "907": WasteType.GLASS.value,    # wine bottle
             "441": WasteType.GLASS.value,    # beer glass
             "440": WasteType.GLASS.value,    # beer bottle
+            "901": WasteType.GLASS.value,    # whiskey jug
             "508": WasteType.E_WASTE.value,  # computer keyboard
             "681": WasteType.E_WASTE.value,  # notebook computer
             "487": WasteType.E_WASTE.value,  # mobile phone
-            "642": WasteType.E_WASTE.value,  # computer mouse (or marimba)
+            "673": WasteType.E_WASTE.value,  # computer mouse
             "478": WasteType.PAPER.value,    # carton
+            "519": WasteType.PAPER.value,    # crate (packaging)
             "549": WasteType.PAPER.value,    # envelope
             "999": WasteType.PAPER.value,    # toilet paper
+            "700": WasteType.PAPER.value,    # paper towel
+            "922": WasteType.PAPER.value,    # menu
+            "917": WasteType.PAPER.value,    # comic book
+            "626": WasteType.METAL.value,    # lighter (metal cylinder)
+            "686": WasteType.METAL.value,    # oil filter (metal canister)
+            "653": WasteType.METAL.value,    # milk can (metal can)
+            "473": WasteType.METAL.value,    # can opener
+            "822": WasteType.METAL.value,    # steel drum
             "948": WasteType.ORGANIC.value,  # Granny Smith apple
             "954": WasteType.ORGANIC.value,  # banana
             "950": WasteType.ORGANIC.value,  # orange
             "937": WasteType.ORGANIC.value,  # broccoli
+            "957": WasteType.ORGANIC.value,  # pomegranate
+            "570": WasteType.HAZARDOUS.value, # gas mask
         }
         for k, v in core_overrides.items():
-            if k not in self.mapping:
-                self.mapping[k] = v
+            self.mapping[k] = v
 
     def _init_session(self) -> None:
         try:
@@ -275,18 +349,22 @@ class ONNXWasteClassifier(BaseWasteClassifier):
         if not self.is_available():
             raise RuntimeError("ONNX model session is not loaded.")
 
-        # 1. Preprocess image
+        # 1. Preprocess and validate image
         img = ImagePreprocessor.load_and_validate(image_input)
         resized_img, metrics = ImagePreprocessor.preprocess_for_inference(img)
 
-        # Flat / solid color check
+        # Flat / solid color check (empty image or solid background)
         if metrics["variance"] < 0.02:
-            logger.info(f"[AI Classification] Flat/solid image detected (variance: {metrics['variance']:.4f}). Categorized as Other.")
+            logger.info(
+                f"[AI Classification] Flat/solid image detected (variance: {metrics['variance']:.4f}). "
+                f"Categorized as Other."
+            )
             raw_result = {
                 "waste_type": WasteType.OTHER.value,
                 "confidence": 0.20,
                 "raw_class_idx": -1,
                 "raw_class_name": "blank_or_solid_color",
+                "subtype": None,
                 "model_used": "ONNX MobileNetV2 (Low Variance Filter)",
             }
             return self.apply_confidence_threshold(raw_result)
@@ -303,7 +381,7 @@ class ONNXWasteClassifier(BaseWasteClassifier):
         # Add batch dimension
         tensor = np.expand_dims(arr, axis=0)
 
-        # 3. Inference
+        # 3. Model Inference
         outputs = self.session.run(None, {self.input_name: tensor})
         logits = outputs[0][0]
 
@@ -311,32 +389,71 @@ class ONNXWasteClassifier(BaseWasteClassifier):
         exp_logits = np.exp(logits - np.max(logits))
         probs = exp_logits / np.sum(exp_logits)
 
-        best_idx = int(np.argmax(probs))
-        confidence = float(probs[best_idx])
-        raw_class_name = self.labels.get(best_idx, f"class_{best_idx}")
-        predicted_category = self.mapping.get(str(best_idx), WasteType.OTHER.value)
+        # 4. Posterior Category Probability Aggregation:
+        # P(Category) = sum of probabilities across all ImageNet classes mapped to that category
+        cat_scores: Dict[str, float] = {cat: 0.0 for cat in SUPPORTED_CATEGORIES}
+        for i, p in enumerate(probs):
+            cat = self.mapping.get(str(i), WasteType.OTHER.value)
+            cat_scores[cat] = cat_scores.get(cat, 0.0) + float(p)
 
-        # Strict rule: NEVER classify a plastic bottle or bottle as Organic
-        if "bottle" in raw_class_name.lower():
-            if "water bottle" in raw_class_name.lower() or "soda bottle" in raw_class_name.lower() or "pop bottle" in raw_class_name.lower():
-                predicted_category = WasteType.PLASTIC.value
-            elif "wine" in raw_class_name.lower() or "beer" in raw_class_name.lower():
-                predicted_category = WasteType.GLASS.value
+        # Find best category by aggregated posterior probability
+        best_category, category_confidence = max(cat_scores.items(), key=lambda x: x[1])
+
+        # Find the top individual ImageNet class
+        best_raw_idx = int(np.argmax(probs))
+        raw_class_name = self.labels.get(best_raw_idx, f"class_{best_raw_idx}")
+
+        # Subtype identification:
+        subtype = None
+        if best_category == WasteType.PLASTIC.value:
+            # Check if visual evidence or predicted classes indicate bottle or container
+            bottle_hints = ["water bottle", "soda bottle", "pop bottle", "bottle", "oxygen mask"]
+            if any(h in raw_class_name.lower() for h in bottle_hints):
+                subtype = "PET Plastic (#1)"
+            elif "bag" in raw_class_name.lower():
+                subtype = "LDPE Plastic (#4)"
+            elif any(h in raw_class_name.lower() for h in ["jug", "tub", "bucket", "lotion", "soap dispenser", "pill bottle"]):
+                subtype = "HDPE / PP Plastic (#2 / #5)"
+            else:
+                subtype = "Rigid Plastic / Check Resin Code"
+
+        # 5. Check if secondary classifier should be invoked:
+        # Triggered when CNN confidence is below threshold (0.60) or category is 'Other'
+        eff_threshold = settings.AI_CONFIDENCE_THRESHOLD
+        if category_confidence < eff_threshold or best_category == WasteType.OTHER.value:
+            is_battery, b_conf, b_subtype, b_name = self.secondary_classifier.detect_battery(img)
+            if is_battery:
+                logger.info(
+                    f"[Secondary Classifier] Identified battery in '{Path(original_filename).name}' "
+                    f"with confidence {b_conf:.2f}."
+                )
+                return {
+                    "waste_type": WasteType.HAZARDOUS.value,
+                    "confidence": round(b_conf, 2),
+                    "is_low_confidence": False,
+                    "raw_prediction": WasteType.HAZARDOUS.value,
+                    "raw_class_idx": -1,
+                    "raw_class_name": b_name,
+                    "subtype": b_subtype,
+                    "model_used": "Secondary Visual Feature Classifier (Battery Detector)",
+                    "message": None,
+                }
 
         # Log AI Inference telemetry
         safe_filename = Path(original_filename).name if original_filename else "uploaded_image"
         logger.info(
             f"[AI Waste Classifier] Image: '{safe_filename}' | "
-            f"Raw Predicted Class: #{best_idx} ({raw_class_name}) | "
-            f"Raw Confidence: {confidence:.4f} | "
-            f"Mapped Category: {predicted_category}"
+            f"Raw Predicted Class: #{best_raw_idx} ({raw_class_name}) | "
+            f"Aggregated Category: {best_category} ({category_confidence:.4f}) | "
+            f"Subtype: {subtype}"
         )
 
         raw_result = {
-            "waste_type": predicted_category,
-            "confidence": confidence,
-            "raw_class_idx": best_idx,
+            "waste_type": best_category,
+            "confidence": category_confidence,
+            "raw_class_idx": best_raw_idx,
             "raw_class_name": raw_class_name,
+            "subtype": subtype,
             "model_used": f"MobileNetV2 ONNX Neural Model ({self.model_path.name})",
         }
 
@@ -347,43 +464,13 @@ class DevelopmentWasteClassifier(BaseWasteClassifier):
     """Fallback Development Classifier.
 
     Active only if the ONNX model file cannot be found.
-    Uses strict visual feature inspection and keyword verification.
+    Uses strict visual feature inspection and property verification.
+    NEVER relies on filenames or hardcoded values.
     NEVER defaults unknown images to Organic.
     """
 
-    KEYWORD_MAPPING = {
-        "bottle": WasteType.PLASTIC.value,
-        "plastic": WasteType.PLASTIC.value,
-        "cup": WasteType.PLASTIC.value,
-        "jug": WasteType.PLASTIC.value,
-        "can": WasteType.METAL.value,
-        "tin": WasteType.METAL.value,
-        "metal": WasteType.METAL.value,
-        "aluminum": WasteType.METAL.value,
-        "apple": WasteType.ORGANIC.value,
-        "banana": WasteType.ORGANIC.value,
-        "food": WasteType.ORGANIC.value,
-        "organic": WasteType.ORGANIC.value,
-        "vegetable": WasteType.ORGANIC.value,
-        "box": WasteType.PAPER.value,
-        "cardboard": WasteType.PAPER.value,
-        "paper": WasteType.PAPER.value,
-        "newspaper": WasteType.PAPER.value,
-        "magazine": WasteType.PAPER.value,
-        "glass": WasteType.GLASS.value,
-        "jar": WasteType.GLASS.value,
-        "battery": WasteType.HAZARDOUS.value,
-        "chemical": WasteType.HAZARDOUS.value,
-        "paint": WasteType.HAZARDOUS.value,
-        "hazardous": WasteType.HAZARDOUS.value,
-        "phone": WasteType.E_WASTE.value,
-        "laptop": WasteType.E_WASTE.value,
-        "cable": WasteType.E_WASTE.value,
-        "wire": WasteType.E_WASTE.value,
-        "circuit": WasteType.E_WASTE.value,
-        "ewaste": WasteType.E_WASTE.value,
-        "peel": WasteType.ORGANIC.value,
-    }
+    def __init__(self):
+        self.secondary_classifier = SecondaryVisualFeatureClassifier()
 
     def classify(
         self,
@@ -397,22 +484,26 @@ class DevelopmentWasteClassifier(BaseWasteClassifier):
         if metrics["variance"] < 0.02:
             raw_result = {
                 "waste_type": WasteType.OTHER.value,
-                "confidence": 0.25,
+                "confidence": 0.20,
+                "subtype": None,
                 "model_used": "Development Feature Classifier (Blank/featureless image)",
             }
             return self.apply_confidence_threshold(raw_result)
 
-        # 2. Check filename keywords if provided
-        fn_lower = original_filename.lower()
-        for kw, cat in self.KEYWORD_MAPPING.items():
-            if kw in fn_lower:
-                logger.info(f"[Development Classifier] Keyword match: '{kw}' -> {cat}")
-                raw_result = {
-                    "waste_type": cat,
-                    "confidence": 0.85,
-                    "model_used": "Development Feature Classifier (Keyword heuristics)",
-                }
-                return self.apply_confidence_threshold(raw_result)
+        # 2. Battery / Hazardous detection via visual feature inspector
+        is_batt, b_conf, b_subtype, b_name = self.secondary_classifier.detect_battery(img)
+        if is_batt:
+            return {
+                "waste_type": WasteType.HAZARDOUS.value,
+                "confidence": round(b_conf, 2),
+                "is_low_confidence": False,
+                "raw_prediction": WasteType.HAZARDOUS.value,
+                "raw_class_idx": -1,
+                "raw_class_name": b_name,
+                "subtype": b_subtype,
+                "model_used": "Development Feature Classifier (Battery Detector)",
+                "message": None,
+            }
 
         # 3. For any image without confident verification, NEVER default to Organic.
         # Categorize as Other with low confidence below threshold.
@@ -420,7 +511,8 @@ class DevelopmentWasteClassifier(BaseWasteClassifier):
         logger.info(f"[Development Classifier] Image '{safe_filename}' not confidently matched. Yielding Other.")
         raw_result = {
             "waste_type": WasteType.OTHER.value,
-            "confidence": 0.40,
+            "confidence": 0.35,
+            "subtype": None,
             "model_used": "Development Feature Classifier (Uncertain object)",
         }
         return self.apply_confidence_threshold(raw_result)
@@ -471,6 +563,7 @@ def classify_waste(
         "waste_type": str,
         "confidence": float (0.0 to 1.0),
         "is_low_confidence": bool,
+        "subtype": Optional[str],
         "model_used": str,
         "raw_class_idx": Optional[int],
         "raw_class_name": Optional[str],

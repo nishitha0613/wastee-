@@ -110,10 +110,35 @@ export default function WasteScanner({ onNavigateToReport }) {
       // Real API call to FastAPI backend
       const res = await wasteApi.identify(fileToUpload);
 
-      const confidencePct = `${Math.round((res.confidence || 0.94) * 100)}%`;
-      const binRecommendation = res.guidance?.collection_recommended
-        ? 'Special Collection / Hazardous'
-        : (res.guidance?.recyclable ? 'Dry Recyclable Waste' : 'Compost / Organic Bin');
+      const confidenceVal = typeof res.confidence === 'number' ? res.confidence : 0;
+      const confidencePct = `${Math.round(confidenceVal * 100)}%`;
+
+      // Standard fallback category-to-bin mappings
+      const categoryBinFallback = {
+        'Plastic': 'Dry Waste / Plastic Recycling',
+        'Paper': 'Paper Recycling',
+        'Glass': 'Glass Recycling',
+        'Metal': 'Metal Recycling',
+        'Organic': 'Wet Waste / Composting',
+        'E-Waste': 'Authorized E-waste Collection',
+        'Hazardous': 'Appropriate Authorized Special Collection',
+        'Other': 'Verification Required'
+      };
+
+      const categoryNameFallback = {
+        'Plastic': 'Recyclable Waste',
+        'Paper': 'Recyclable Waste',
+        'Glass': 'Recyclable Waste',
+        'Metal': 'Recyclable Waste',
+        'Organic': 'Organic / Compostable Waste',
+        'E-Waste': 'Electronic Waste',
+        'Hazardous': 'Hazardous Waste',
+        'Other': 'Unidentified / Other'
+      };
+
+      const binRecommendation = res.guidance?.recommended_bin || res.recommended_bin || res.guidance?.bin || categoryBinFallback[res.waste_type] || 'Verification Required';
+      const category = res.guidance?.category || res.category || categoryNameFallback[res.waste_type] || 'Recyclable Waste';
+      const subtype = res.guidance?.subtype || res.subtype || null;
 
       const whyClassification = res.guidance?.primary_method || res.guidance?.recommendation || res.guidance?.disposal_method || `Disposal recommendation for ${res.waste_type}.`;
       const recyclingMethods = res.guidance?.recycling_methods || res.recommendation?.recycling_methods || [];
@@ -127,9 +152,10 @@ export default function WasteScanner({ onNavigateToReport }) {
       setScanResult({
         id: res.id,
         type: res.waste_type,
-        category: res.guidance?.recyclable ? 'Recyclable Stream' : 'Special / Managed Stream',
+        category,
+        subtype,
         confidence: confidencePct,
-        confidencePercent: confidencePct,
+        confidencePercent: `${Math.round(confidenceVal * 100)}%`,
         bin: binRecommendation,
         imagePath: res.image_path,
         guidance: res.guidance,
@@ -367,6 +393,11 @@ export default function WasteScanner({ onNavigateToReport }) {
                   <div className="result-metric-box">
                     <div className="metric-label">Waste Type</div>
                     <div className="metric-value">{scanResult.type}</div>
+                    {scanResult.subtype && (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--brand-sage, #55755C)', fontWeight: 600, marginTop: '0.25rem' }}>
+                        {scanResult.subtype}
+                      </div>
+                    )}
                   </div>
                   <div className="result-metric-box">
                     <div className="metric-label">Category</div>

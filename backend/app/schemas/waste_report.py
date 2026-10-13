@@ -5,7 +5,16 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class DisposalGuidanceResponse(BaseModel):
-    category: Optional[str] = Field(None, example="Plastic")
+    category: Optional[str] = Field(None, example="Recyclable Waste")
+    subtype: Optional[str] = Field(None, example="PET Plastic (#1)")
+    recommended_bin: Optional[str] = Field(
+        None,
+        example="Dry Waste / Plastic Recycling",
+    )
+    bin: Optional[str] = Field(
+        None,
+        example="Dry Waste / Plastic Recycling",
+    )
     primary_method: Optional[str] = Field(
         None,
         example="Plastic segregation and certified mechanical recycling",
@@ -13,10 +22,12 @@ class DisposalGuidanceResponse(BaseModel):
     recycling_methods: List[str] = Field(
         default_factory=list,
         example=[
-            "Identify plastic type and recycling symbol.",
-            "Empty and rinse containers.",
-            "Separate recyclable plastic from non-recyclable plastic.",
-            "Take suitable plastic to a municipal recycling point.",
+            "Empty the bottle completely.",
+            "Rinse it if needed and allow it to dry.",
+            "Separate the cap and label if required by the local recycling facility.",
+            "Check the resin identification code, if available, to help determine the plastic type.",
+            "Place it in an authorized plastic recycling or dry-waste collection stream.",
+            "If local facilities do not accept it, direct the user to an appropriate municipal collection point.",
         ],
     )
     disposal_method: str = Field(
@@ -67,6 +78,9 @@ class WasteIdentificationResponse(BaseModel):
     waste_type: str
     confidence: float
     image_path: str
+    category: Optional[str] = None
+    recommended_bin: Optional[str] = None
+    subtype: Optional[str] = None
     guidance: Optional[DisposalGuidanceResponse] = None
     recommendation: Optional[DisposalGuidanceResponse] = None
     created_at: datetime

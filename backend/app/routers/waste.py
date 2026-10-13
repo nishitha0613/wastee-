@@ -169,9 +169,14 @@ async def identify_waste(
     is_low_confidence = classification.get("is_low_confidence", False)
     message = classification.get("message")
     model_used = classification.get("model_used")
+    subtype = classification.get("subtype")
 
     # 8. Retrieve disposal guidance and recycling methods for identified category
-    guidance = get_disposal_guidance(waste_type, is_low_confidence=is_low_confidence)
+    guidance = get_disposal_guidance(
+        waste_type,
+        is_low_confidence=is_low_confidence,
+        subtype=subtype,
+    )
 
     # 9. Create and persist WasteReport record with guidance
     waste_report = WasteReport(
@@ -206,6 +211,9 @@ async def identify_waste(
         "waste_type": waste_report.waste_type,
         "confidence": waste_report.confidence,
         "image_path": waste_report.image_path,
+        "category": guidance.get("category"),
+        "recommended_bin": guidance.get("recommended_bin"),
+        "subtype": guidance.get("subtype"),
         "guidance": guidance,
         "recommendation": guidance,
         "created_at": waste_report.created_at,

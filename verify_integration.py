@@ -142,10 +142,12 @@ def main():
     log(f"11a. Admin updated request {request_id} -> 'accepted'", "SUCCESS")
 
     # 11b. accepted -> scheduled
+    from datetime import datetime, timezone, timedelta
+    future_date = (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()
     res = client.patch(
         f"{BASE_URL}/api/admin/collection-requests/{request_id}/schedule",
         headers=admin_headers,
-        json={"scheduled_date": "2026-10-10T10:00:00Z"},
+        json={"scheduled_date": future_date},
     )
     assert res.status_code == 200, f"Status update to scheduled failed: {res.text}"
     assert res.json()["status"] == "scheduled"
