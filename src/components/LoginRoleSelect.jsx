@@ -2,49 +2,29 @@ import React, { useState } from 'react';
 import { 
   Leaf, 
   User, 
-  ShieldCheck, 
-  ArrowRight, 
   Camera, 
   FileText, 
   BookOpen, 
-  BarChart3, 
-  Map, 
-  Flame,
-  Sparkles,
-  Lock,
-  Mail,
-  Key,
-  AlertCircle,
-  Loader2,
-  CheckCircle2,
-  UserPlus,
-  LogIn
+  Sparkles, 
+  Lock, 
+  Mail, 
+  Key, 
+  AlertCircle, 
+  Loader2, 
+  CheckCircle2, 
+  UserPlus, 
+  LogIn 
 } from 'lucide-react';
 import { authApi } from '../services/api';
 
 export default function LoginRoleSelect({ onLoginSuccess }) {
   const [activeTab, setActiveTab] = useState('login'); // 'login' | 'register'
-  const [selectedRole, setSelectedRole] = useState('user'); // 'user' | 'admin'
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-
-  // Switch role context without inserting fake credentials
-  const handleSelectRoleCard = (role) => {
-    setSelectedRole(role);
-    setErrorMessage('');
-    setSuccessMessage('');
-    if (role === 'admin') {
-      setActiveTab('login');
-    }
-    const formElement = document.getElementById('auth-form-card');
-    if (formElement) {
-      formElement.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -112,16 +92,10 @@ export default function LoginRoleSelect({ onLoginSuccess }) {
           }
         }, 400);
       } else {
-        // Authenticate existing user/admin with the database
+        // Authenticate existing user with the database
         const res = await authApi.login({ email: trimmedEmail, password });
         if (!res?.access_token) {
           throw new Error('Authentication token not received from server.');
-        }
-
-        // Verify role privilege if administrator portal was specifically requested
-        if (selectedRole === 'admin' && res.user.role !== 'admin') {
-          authApi.logout?.();
-          throw new Error('Access denied: This account does not possess municipal administrator privileges.');
         }
 
         setSuccessMessage(`Welcome back, ${res.user?.name || 'User'}!`);
@@ -133,7 +107,6 @@ export default function LoginRoleSelect({ onLoginSuccess }) {
       }
     } catch (err) {
       console.warn('Authentication error:', err);
-      // Map error messages cleanly
       let displayError = err.message || 'Authentication failed. Please verify your credentials.';
       if (err.status === 401) {
         displayError = 'Invalid email or password.';
@@ -150,7 +123,7 @@ export default function LoginRoleSelect({ onLoginSuccess }) {
 
   return (
     <div className="login-page-wrapper">
-      <div className="container login-container" style={{ maxWidth: '880px' }}>
+      <div className="container login-container" style={{ maxWidth: '640px' }}>
         {/* Brand Header */}
         <div className="login-brand-header">
           <div className="login-logo-group">
@@ -171,22 +144,19 @@ export default function LoginRoleSelect({ onLoginSuccess }) {
             Welcome to EcoCycle
           </h1>
           <p className="subheading login-subtitle">
-            Choose your access role or sign in with your credentials.
+            Sign in to scan and report waste, or create a new citizen account.
           </p>
         </div>
 
-        {/* 2 Large Role Cards Grid */}
-        <div className="role-cards-grid" style={{ marginBottom: '2rem' }}>
-          {/* Card 1: Regular User */}
+        {/* Citizen Features Overview Card */}
+        <div style={{ marginBottom: '2rem' }}>
           <div 
-            className={`role-card ${selectedRole === 'user' ? 'selected' : ''}`}
+            className="role-card selected"
             style={{
-              cursor: 'pointer',
-              border: selectedRole === 'user' ? '2px solid var(--sage-600)' : '1px solid var(--border-color)',
-              transform: selectedRole === 'user' ? 'translateY(-2px)' : 'none',
-              boxShadow: selectedRole === 'user' ? '0 8px 24px rgba(85, 117, 92, 0.15)' : 'none'
+              border: '2px solid var(--sage-600)',
+              boxShadow: '0 8px 24px rgba(85, 117, 92, 0.12)',
+              cursor: 'default'
             }}
-            onClick={() => handleSelectRoleCard('user')}
           >
             <div className="role-card-top">
               <div className="role-icon-box user-icon-box">
@@ -196,9 +166,9 @@ export default function LoginRoleSelect({ onLoginSuccess }) {
             </div>
 
             <div className="role-card-body">
-              <h2 className="role-name">Regular User</h2>
+              <h2 className="role-name">Citizen Waste Assistant</h2>
               <p className="role-desc">
-                Scan waste, report waste, track your reports, and learn about responsible waste disposal.
+                Identify waste materials with AI, report community waste locations, and track disposal recommendations.
               </p>
 
               <div className="role-features-list">
@@ -216,79 +186,6 @@ export default function LoginRoleSelect({ onLoginSuccess }) {
                 </div>
               </div>
             </div>
-
-            <div className="role-card-footer">
-              <button 
-                type="button" 
-                className="btn btn-primary role-cta-btn"
-                disabled={isLoading}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSelectRoleCard('user');
-                }}
-              >
-                <span>Continue as User</span>
-                <ArrowRight size={16} />
-              </button>
-            </div>
-          </div>
-
-          {/* Card 2: Administrator */}
-          <div 
-            className={`role-card ${selectedRole === 'admin' ? 'selected' : ''}`}
-            style={{
-              cursor: 'pointer',
-              border: selectedRole === 'admin' ? '2px solid var(--sage-700)' : '1px solid var(--border-color)',
-              transform: selectedRole === 'admin' ? 'translateY(-2px)' : 'none',
-              boxShadow: selectedRole === 'admin' ? '0 8px 24px rgba(49, 82, 115, 0.15)' : 'none'
-            }}
-            onClick={() => handleSelectRoleCard('admin')}
-          >
-            <div className="role-card-top">
-              <div className="role-icon-box admin-icon-box">
-                <ShieldCheck size={28} strokeWidth={2} />
-              </div>
-              <span className="role-type-badge" style={{ backgroundColor: '#EAF0F6', color: '#315273' }}>
-                Municipal Dispatch
-              </span>
-            </div>
-
-            <div className="role-card-body">
-              <h2 className="role-name">Administrator</h2>
-              <p className="role-desc">
-                Monitor waste reports, locations, hotspots, and waste-management analytics.
-              </p>
-
-              <div className="role-features-list">
-                <div className="role-feature-item">
-                  <BarChart3 size={15} className="text-sage-accent" />
-                  <span>Live Municipal Dashboard</span>
-                </div>
-                <div className="role-feature-item">
-                  <Map size={15} className="text-sage-accent" />
-                  <span>Hotspot Map & Area Surveillance</span>
-                </div>
-                <div className="role-feature-item">
-                  <Flame size={15} className="text-sage-accent" />
-                  <span>Priority Resolution Pipeline</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="role-card-footer">
-              <button 
-                type="button" 
-                className="btn btn-primary role-cta-btn"
-                disabled={isLoading}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleSelectRoleCard('admin');
-                }}
-              >
-                <span>Continue as Administrator</span>
-                <ArrowRight size={16} />
-              </button>
-            </div>
           </div>
         </div>
 
@@ -299,7 +196,6 @@ export default function LoginRoleSelect({ onLoginSuccess }) {
           padding: '1.75rem',
           border: '1px solid var(--border-color)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.04)',
-          maxWidth: '520px',
           margin: '0 auto',
         }}>
           {/* Form Toggle Header */}
@@ -331,28 +227,26 @@ export default function LoginRoleSelect({ onLoginSuccess }) {
               <span>Sign In</span>
             </button>
 
-            {selectedRole === 'user' && (
-              <button
-                type="button"
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontWeight: activeTab === 'register' ? 700 : 500,
-                  color: activeTab === 'register' ? 'var(--sage-700)' : 'var(--text-muted)',
-                  borderBottom: activeTab === 'register' ? '2px solid var(--sage-700)' : '2px solid transparent',
-                  padding: '0.4rem 0.6rem',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  fontSize: '0.95rem',
-                }}
-                onClick={() => { setActiveTab('register'); setErrorMessage(''); }}
-              >
-                <UserPlus size={16} />
-                <span>Create Citizen Account</span>
-              </button>
-            )}
+            <button
+              type="button"
+              style={{
+                background: 'none',
+                border: 'none',
+                fontWeight: activeTab === 'register' ? 700 : 500,
+                color: activeTab === 'register' ? 'var(--sage-700)' : 'var(--text-muted)',
+                borderBottom: activeTab === 'register' ? '2px solid var(--sage-700)' : '2px solid transparent',
+                padding: '0.4rem 0.6rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                fontSize: '0.95rem',
+              }}
+              onClick={() => { setActiveTab('register'); setErrorMessage(''); }}
+            >
+              <UserPlus size={16} />
+              <span>Create Citizen Account</span>
+            </button>
           </div>
 
           {/* Feedback Messages */}
@@ -490,7 +384,7 @@ export default function LoginRoleSelect({ onLoginSuccess }) {
               ) : (
                 <>
                   <LogIn size={16} />
-                  <span>Sign In ({selectedRole === 'admin' ? 'Admin' : 'User'})</span>
+                  <span>Sign In</span>
                 </>
               )}
             </button>
